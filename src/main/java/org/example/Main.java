@@ -23,7 +23,8 @@ public class Main {
 
   public static void main(String[] args) {
     try {
-      LOG.info("Starting up, the args are: {} . . .", String.join(" ", args));
+      LOG.info("Starting up, the args are: {}, java version is: {} . . .", String.join(" ", args),
+        System.getProperty("java.version"));
 
       if (Arrays.asList(args).contains("--set-timeout")) {
         // Emergency exit after 2 minutes, to prevent stalling the test case:

@@ -167,6 +167,9 @@ while true; do
     continue
   fi
 
+  grep "All putAsync operations completed successfully" build/3.log
+  grep "keys, cache size is" build/2.log
+
   endMsg="Listener node exited successfully, the test will be re-tried now"
 
   consec_broken_cycles=0
