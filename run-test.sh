@@ -52,11 +52,7 @@ is_finished_early() {
 stop_and_check() {
   local pid=$1
 
-  if ! kill -0 "$pid" 2>/dev/null; then
-    return
-  fi
-
-  kill -9 "$pid"
+  kill -9 "$pid" 2>/dev/null;
   sleep 1
   if kill -0 "$pid" 2>/dev/null; then
     echo "ERR: Process $pid is still running after kill -9."
@@ -78,12 +74,15 @@ consec_broken_cycles=0
 
 echo "Starting the test cycle . . ."
 
-while true; do
+log() {
+  NOW=$(date +%s)
+  ELAPSED=$((NOW - START_TIME))
+  printf -v DURATION '%02d:%02d:%02d' $((ELAPSED / 3600)) $((ELAPSED % 3600 / 60)) $((ELAPSED % 60))
 
-  if [ $consec_broken_cycles -ge 3 ]; then
-    echo "ERR: Too many consecutive broken cycles ($consec_broken_cycles), exiting."
-    exit 1
-  fi
+  echo "$(date +%T) - elapsed $DURATION - $1"
+}
+
+while true; do
 
   if [ "$unexpected_error" = true ]; then
     consec_broken_cycles=$((consec_broken_cycles + 1))
@@ -97,22 +96,31 @@ while true; do
     echo "Unexpected error has happened, the logs copied to build/$NOW-*.log, will retry now . . ."
   fi
 
-  [[ ! -z "$PID1" ]] && stop_and_check "$PID1" && unset PID1
-  [[ ! -z "$PID2" ]] && stop_and_check "$PID2" && unset PID2
-  [[ ! -z "$PID3" ]] && stop_and_check "$PID3" && unset PID3
-
-  echo "---------------------------------"
-
-  date
-
   remove_if_exist "build/1.log" || exit 1
   remove_if_exist "build/2.log" || exit 1
   remove_if_exist "build/3.log" || exit 1
 
+  [[ ! -z "$PID1" ]] && stop_and_check "$PID1" && unset PID1
+  [[ ! -z "$PID2" ]] && stop_and_check "$PID2" && unset PID2
+  [[ ! -z "$PID3" ]] && stop_and_check "$PID3" && unset PID3
+  
+  rm -rf ignite
+
+  if [ $consec_broken_cycles -ge 3 ]; then
+    echo "ERR: Too many consecutive broken cycles ($consec_broken_cycles), exiting."
+    exit 1
+  fi
+
+  [ ! -z "${endMsg}" ] && log "${endMsg}"
+  echo "---------------------------------"
+  unset endMsg
+
+  date
+
   # First node - does nothing apart from holding data when it arrives:
   "$BIN_PATH" --set-timeout >build/1.log 2>&1 &
   PID1=$!
-  echo "Started 1st node with PID $PID1"
+  log "Started 1st node with PID $PID1"
   sleep 5
   if is_finished_early "$PID1"; then
     unexpected_error=true
@@ -123,7 +131,7 @@ while true; do
   # actually checks for the missing entries:
   "$BIN_PATH" --set-timeout >build/2.log 2>&1 &
   PID2=$!
-  echo "Started 2nd node with PID $PID2"
+  log "Started 2nd node with PID $PID2"
   sleep 5
   if is_finished_early "$PID2"; then
     unexpected_error=true
@@ -133,38 +141,33 @@ while true; do
   # Third node - this one creates the cache and puts some entries into it:
   "$BIN_PATH" --set-timeout >build/3.log 2>&1 &
   PID3=$!
-  echo "Started 3rd node with PID $PID3"
+  log "Started 3rd node with PID $PID3"
   sleep 5
-  if is_finished_early "$PID2"; then
+  if is_finished_early "$PID3"; then
     unexpected_error=true
     continue
   fi
 
   # 2 mins is the timeout set in the java code:
-  echo "Waiting for the 2nd node to finish, 2 mins max . . ."
+  log "Waiting for the 2nd node to finish, 2 mins max . . ."
   wait $PID2
   EXIT_CODE=$?
-  echo "2nd node exited with code $EXIT_CODE..."
-
-  NOW=$(date +%s)
-  ELAPSED=$((NOW - START_TIME))
-  printf -v DURATION '%02d:%02d:%02d' $((ELAPSED / 3600)) $((ELAPSED % 3600 / 60)) $((ELAPSED % 60))
-  echo "Elapsed time: $DURATION"
+  log "2nd node exited with code $EXIT_CODE..."
 
   if [ $EXIT_CODE -eq 32 ]; then
     msg="!!! Yay! Expected error has happened, check the logs (build/*.log) for details. !!!"
-    echo "${msg}"
+    log "${msg}"
     echo "${msg}" >>build/2.log
     exit $EXIT_CODE
   fi
 
   if [ $EXIT_CODE -ne 0 ]; then
-    echo "ERR: UNEXPECTED error has happened with the listener."
+    endMsg="ERR: Listener node got UNEXPECTED error $EXIT_CODE"
     unexpected_error=true
     continue
   fi
 
-  echo "Listener node exited successfully, the test will be re-tried now"
+  endMsg="Listener node exited successfully, the test will be re-tried now"
 
   consec_broken_cycles=0
 done

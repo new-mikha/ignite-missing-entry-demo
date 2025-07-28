@@ -64,7 +64,12 @@ public class DemoListener {
       for (Cache.Entry<String, DataA> entry : cursor)
         observedKeys.add(entry.getKey());
 
-      Thread.sleep(5_000);
+      // Wait not more than 20 seconds for the listener to observe all entries:
+      for (int i = 0; i < 20; i++) {
+        Thread.sleep(1_000);
+        if (observedKeys.size() == ENTRIES_COUNT)
+          break;
+      }
 
       int observedKeysCount = observedKeys.size();
 
